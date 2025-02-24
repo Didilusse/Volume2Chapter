@@ -1,24 +1,17 @@
 import os
-import zipfile
 from pathlib import Path
+from PyPDF2 import PdfMerger
 import re
 
 # Define volumes and chapters
 volumes = {
-    10: range(77, 86),
-    11: range(86, 94),
-    12: range(94, 103),
-    13: range(103, 112),
-    14: range(112, 121),
-    15: range(121, 130),
-    16: range(130, 139),
-    17: range(139, 148),
+    18: range(162, 177)
 }
 
 # Directories
-input_dir = Path("/Users/adil/Downloads/DanDaDanChapter")  # Path to your CBZ chapter files
+input_dir = Path("/Users/adil/Downloads/DanDaDanChapter")  # Path to your PDF chapter files
 output_dir = Path("/Users/adil/Downloads/DanDaDanVolume")  # Path to save volumes
-cover_dir = Path("/Users/adil/Downloads/DanDaDanChapter")    # Path to your cover images
+cover_dir = Path("/Users/adil/Downloads/DanDaDanChapter")  # Path to your cover images
 
 # Ensure output directory exists
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -26,52 +19,55 @@ output_dir.mkdir(parents=True, exist_ok=True)
 def find_chapter_files(chapter_number, files):
     """Find chapter files matching the chapter number."""
     chapter_number_str = f"{int(chapter_number):03d}"  # Zero-padded number
-    pattern = re.compile(rf"Dandadan {chapter_number_str}\.cbz")
+    pattern = re.compile(rf"Dandadan {chapter_number_str}\.pdf")
     matched_files = [file for file in files if pattern.match(file.name)]
     
     if not matched_files:
         print(f"Warning: No files found for Chapter {chapter_number_str}")
     return matched_files
 
-def add_cover_to_volume(volume_number, volume_zip):
-    """Add the cover image to the .cbz archive, renamed as !cover.jpg."""
+def add_cover_to_pdf(merger, volume_number):
+    """Add the cover image as the first page of the PDF."""
     cover_image_path = cover_dir / f"Volume_{volume_number}.jpeg"
     if cover_image_path.exists():
-        with open(cover_image_path, "rb") as cover_file:
-            cover_data = cover_file.read()
-            volume_zip.writestr("!cover.jpg", cover_data)  # Add as '!cover.jpg'
-            print(f"Added cover image {cover_image_path.name} to volume.")
+        print(f"Adding cover image for Volume {volume_number} to the PDF.")
+        # Convert the image to a single-page PDF before merging
+        from PIL import Image
+        cover_pdf_path = cover_image_path.with_suffix(".pdf")
+        image = Image.open(cover_image_path)
+        image.convert("RGB").save(cover_pdf_path)
+        merger.append(str(cover_pdf_path))
     else:
         print(f"Warning: Cover image for Volume {volume_number} not found.")
 
 def create_volume(volume_number, chapters, all_files):
-    """Combine chapter files into a single volume and add the cover image."""
-    volume_filename = output_dir / f"Volume_{volume_number:02d}.cbz"
+    """Combine chapter PDFs into a single volume PDF."""
+    volume_filename = output_dir / f"Volume_{volume_number:02d}.pdf"
+    merger = PdfMerger()
+
+    # Add cover image as the first page
+    add_cover_to_pdf(merger, volume_number)
+
+    # Add chapters to volume
+    for chapter in chapters:
+        chapter_files = find_chapter_files(chapter, all_files)
+        for chapter_file in chapter_files:
+            print(f"Adding Chapter {chapter}: {chapter_file.name}")
+            merger.append(str(chapter_file))
     
-    with zipfile.ZipFile(volume_filename, 'w') as volume_zip:
-        # Add chapters to volume
-        for chapter in chapters:
-            chapter_files = find_chapter_files(chapter, all_files)
-            for chapter_file in chapter_files:
-                with zipfile.ZipFile(chapter_file, 'r') as chapter_zip:
-                    for file in chapter_zip.namelist():
-                        # Write files from the chapter ZIP into the volume ZIP
-                        content = chapter_zip.read(file)
-                        volume_zip.writestr(f"Chapter_{chapter}/{file}", content)
-        
-        # Add cover image to volume
-        add_cover_to_volume(volume_number, volume_zip)
-        
-        print(f"Created {volume_filename} with chapters {chapters}.")
+    # Write the combined volume PDF
+    merger.write(str(volume_filename))
+    merger.close()
+    print(f"Created {volume_filename} with chapters {chapters}.")
 
 def main():
     """Main function to combine manga chapters into volumes."""
-    # Get all .cbz files in the input directory
-    all_cbz_files = sorted(input_dir.glob("*.cbz"))
+    # Get all .pdf files in the input directory
+    all_pdf_files = sorted(input_dir.glob("*.pdf"))
     
     # Create volumes
     for volume_num, chapters in volumes.items():
-        create_volume(volume_num, chapters, all_cbz_files)
+        create_volume(volume_num, chapters, all_pdf_files)
 
 if __name__ == "__main__":
     main()
